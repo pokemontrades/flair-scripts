@@ -2,11 +2,15 @@
 
 import praw
 import re
+import logging
 
 reddit = praw.Reddit(client_id='',
                      client_secret='',
                      refresh_token='',
                      user_agent='desktop:/r/pokemontrades flair migration for new reddit:v0.1 (by /u/crownofnails and /u/SnowPhoenix9999)')
+logging.basicConfig(format='%(asctime)s %(levelname)s :: %(message)s',
+                    filename='newreddit.log',
+                    level=logging.INFO)
 
 SUBREDDIT = 'pokemontrades'
 BANNED_FLAIR_TEMPLATE = '3edecb3e-2f5e-11ea-88ac-0e3967aa9217'
@@ -57,16 +61,16 @@ flair_mappings = {
 
 #         print()
 
-def remove_elements(array, overage):
+def remove_elements(array, overage, count):
     reduction = 0
-    print ("Received array {0}".format(str(array)))
+    logging.info("#%s Received array %s", count, str(array))
     while reduction < overage and len(array) > 1:
-        print("Removing element in slot {0}".format(str(len(array)-1)))
+        logging.info("#%s Removing element in slot %s", count, str(len(array)-1))
         removed = array.pop(len(array)-1)
         reduction += len(removed) + 2
     return array
 
-def shorten_flair(flair_components, overage):
+def shorten_flair(flair_components, overage, count):
     #print("Shortening flair")
     emoji_string_left = flair_components[1] or ''
     fc_string = flair_components[2]
@@ -76,19 +80,19 @@ def shorten_flair(flair_components, overage):
     igns = re.split(r"(?<=\)), ", flair_components[3])
     fcs = re.split(r", ", flair_components[2])
     if len(flair_components[3]) - len(igns[0]) >= overage:
-        igns = remove_elements(igns, overage)
+        igns = remove_elements(igns, overage, count)
         ign_string = ", ".join(igns)
-        print("Reduced flair to {0}".format(ign_string))
+        logging.info('#%s Reduced flair to %s', count, ign_string)
     elif len(flair_components[2]) - len(fcs[0]) >= overage:
-        fcs = remove_elements(fcs, overage)
+        fcs = remove_elements(fcs, overage, count)
         fc_string = ", ".join(fcs)
-        print("Reduced flair to {0}".format(fc_string))
+        logging.info("#%s Reduced flair to %s", count, fc_string)
     elif (len(flair_components[3]) - len(igns[0])) + (len(flair_components[2]) - len(fcs[0])) >= overage:
-        igns = remove_elements(igns, overage)
+        igns = remove_elements(igns, overage, count)
         ign_string = ", ".join(igns)
         reduction = len(flair_components[3]) - len(ign_string)
         if reduction < overage:
-            fcs = remove_elements(fcs, overage)
+            fcs = remove_elements(fcs, overage, count)
         fc_string = ", ".join(fcs)
     else:
         return str(flair_components[1] or '')
@@ -113,17 +117,17 @@ def update_users(users):
         flair_regex = r"^(:[A-Za-z0-9_\-]+:)?(?:SW-)?(\d{4}-\d{4}-\d{4}(?:, (?:SW-)?\d{4}-\d{4}-\d{4})*) \|\| (.*?)(?: \|\| (XXXX|\d{4}(?:, \d{4})*))?(:[A-Za-z0-9_\-]+:)?$"
         flair_text_match = re.search(flair_regex, flair_text)
 
-        print('#{0} Current user: {1}. Flair text: \'{2}\'. Flair class: \'{3}\''.format(count, username, flair_text, flair_css_class))
-        
+        logging.info('#%s Current user: %s Flair text: \'%s\'. Flair class: \'%s\'', count, username, flair_text, flair_css_class)
+    
         # only do anything to the flair if the user doesn't have (full) mod flair
         if flair_css_class and 'mf' in flair_css_class:
-            print('- Skipped setting flair for {0} as this user has mod flair.'.format(username))
-            print()
+            logging.info('#%s Skipped setting flair for %s as this user has mod flair.', count, username)
         # elif flair_text_match and flair_text_match[1]:
         #     print('- Skipped setting flair for {0} since it appears they already have an emoji flair: {1}'.format(username, flair_text))
         # not a full mod, carry on
         elif flair_text_match:
             if ':' in flair_text:
+                logging.warning('#%s Colons found. Sanitizing flair text.', count)
                 flair_text = sanitize_flair_text(flair_text)
 
             # banned user
@@ -140,7 +144,7 @@ def update_users(users):
 
                 # slice off anything after 64 characters
                 if len(new_flair_text) > 64:
-                    new_flair_text = new_additions + ' ' + shorten_flair(flair_text_match, len(new_flair_text) - 64)
+                    new_flair_text = new_additions + ' ' + shorten_flair(flair_text_match, len(new_flair_text) - 64, count)
 
                 flair_template_id = BANNED_FLAIR_TEMPLATE
 
@@ -157,14 +161,12 @@ def update_users(users):
                 # set flair text to just emoji if they go over limit
                 if len(new_flair_text) >= 64:
                     if flair_text_match:
-                        new_flair_text = shorten_flair(re.search(flair_regex, new_flair_text), len(new_flair_text) - 64)
+                        new_flair_text = shorten_flair(re.search(flair_regex, new_flair_text), len(new_flair_text) - 64, count)
                     else:
                         new_flair_text = new_additions
 
             # set new flair
-            print('-- Setting flair for {0} as flair_text: \'{1}\', flair_css_class: \'{2}\''.format(username, new_flair_text, flair_css_class))
-            print()
-
+            logging.info('#%s -- Setting flair for %s as flair_text: \'%s\', flair_css_class: \'%s\'\n', count, username, new_flair_text, flair_css_class)
             #sub.flair.set(
             #    redditor=u['user'], 
             #    text=new_flair_text, 
@@ -172,8 +174,7 @@ def update_users(users):
             #    flair_template_id=flair_template_id
             #    )
         else:
-            print("-- Skipping user as flair does not match current pattern.")
-            print()
+            logging.info('#%s -- Skipping user %s as flair text \'%s\' does not match current pattern.\n', count, username, flair_text)
 
 if __name__ == '__main__':
     # print_users(flairedusers)
